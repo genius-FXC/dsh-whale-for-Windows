@@ -1,109 +1,58 @@
-# DSH 小鲸鱼 🐋
+# dsh-whale for Windows 🐋
 
-macOS 菜单栏上的一只小鲸鱼，帮你照看 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）：
+DeepSeek Harness（DSH）的 Windows 托盘助手：管理后台服务、查看余额与订阅额度、通过 DSH 原生 OAuth 登录 ChatGPT。
 
-- **守着服务**：开机自动拉起 `dsh web`，崩了自动重启；启动失败会发通知告诉你原因。
-- **一眼看余额**：DeepSeek、OpenRouter、ChatGPT 订阅……想看哪几个，在设置里勾选。
-- **一键打开界面**：自动带上登录 token 打开 DSH 网页，不用再去日志里翻链接。
+基于 [Orbit-Labs-AI/dsh-whale](https://github.com/Orbit-Labs-AI/dsh-whale) 移植，保留原版 Swift 源码、资源和 MIT 许可证。Windows 实现采用 C# / .NET Framework；原版 macOS 文档见 [README-macOS.md](README-macOS.md)。
 
-<img src="docs/panel.png" width="288" alt="小鲸鱼面板">
+## 功能
 
-> **English** — A macOS menu bar companion for DeepSeek Harness. It keeps `dsh web` running
-> (auto-start at login, restart on crash, a notification with the reason when startup fails),
-> shows the model balances you choose, and opens the web UI with its login token in one click.
-> Build with `scripts/build-app.sh --install`; everything else below is in Chinese.
+- 开启、关闭、重启 DSH；异常退出后恢复，连续启动失败时停止重试。
+- 读取 DeepSeek 余额、OpenRouter 余额或 Key 限额、ChatGPT 订阅剩余额度。
+- ChatGPT 登录页面使用 DSH 内置 openai-codex OAuth，授权后可在 DSH 选择 GPT 模型。
+- 余额来源显示、隐藏、改名和排序；托盘菜单、权限模式和 Windows 登录自启动设置。
+- 自动发现 npm 全局安装和 npx 缓存中的 DSH，不硬编码缓存目录。
 
-## 安装
+<img src="docs/windows-panel.png" width="360" alt="Windows 小鲸鱼面板（演示数据）">
 
-需要 macOS 13 以上、Xcode 命令行工具（`xcode-select --install`），以及已经能用的 DSH。
+截图为演示数据，实际余额需要配置相应账户。
 
-```bash
-git clone https://github.com/Alphainfix/dsh-whale.git
-cd dsh-whale
-scripts/build-app.sh --install      # 编译、打包，装进 /Applications
-scripts/install-launchagent.sh      # 可选：开机自动启动
+## 从源码使用
+
+需要 Windows、Node.js，以及已经安装并能运行的 DeepSeek Harness。使用 Windows 自带 .NET Framework 编译器，无需安装 .NET SDK。
+
+```powershell
+git clone https://github.com/genius-FXC/dsh-whale-for-Windows.git
+cd dsh-whale-for-Windows
+powershell -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 ```
 
-然后从「应用程序」里打开 **DSH小鲸鱼**，菜单栏会出现一只鲸鱼。它没有 Dock 图标。
+双击 `启动小鲸鱼.vbs`。程序常驻任务栏通知区域，也可能位于托盘折叠菜单中。
 
-## 使用
+安装脚本会备份并更新 DSH 的 web profile，注册余额插件和 ChatGPT 提供方；插件文件应保留在安装位置。已有服务未加载插件时，在小鲸鱼中重启 DSH。
 
-点一下菜单栏的鲸鱼：
+## 登录 ChatGPT
 
-- **开启 / 关闭 / 重启服务**，以及**打开 DSH 界面**。
-- 服务是按 3080 端口认的：你在终端里自己运行的 `dsh web`，小鲸鱼一样看得见、管得了。
-- 退出小鲸鱼时，它会问你要不要把服务一起停掉。
+1. 点击「打开 DSH 界面」，建立浏览器的本机会话。
+2. 在小鲸鱼设置页或托盘菜单点击「登录 ChatGPT」，完成 OpenAI 授权。
+3. 回到 DSH，在模型选择器中选择 **ChatGPT (OAuth)**（提供方 ID：`openai-codex`）下的模型。
 
-「打开 DSH 界面」会优先用 `~/Applications/DSH.app`（用 Safari「添加到程序坞」做的网页 App，独立窗口）；
-没有的话就用默认浏览器。
+OAuth 凭据由 DSH 保存和刷新。ChatGPT 额度查询需要已安装的 Codex CLI，目前自动发现 Windows Codex 安装目录；查询依赖实验性 app-server 接口，兼容性可能随版本变化。查询失败不影响 DSH 调用 GPT。
 
-## 设置
+DeepSeek 和 OpenRouter 密钥在本机 DSH 中配置。OpenRouter 普通 Key 的限额不等同于账户余额。未配置、未登录或查询失败时显示「—」，不填入模拟余额。
 
-面板右下角的「设置…」（⌘,）：
+## 验证与打包
 
-<img src="docs/settings.png" width="460" alt="设置窗口">
-
-- **余额显示**：勾选要显示的余额，名字可以直接改，右边的箭头调整顺序。
-- **显示微信 Clawbot 状态**：没用 [wechat-clawbot](https://github.com/Alphainfix/wechat-clawbot) 的话可以关掉这一行。
-- **启动 DSH 的权限模式**：默认跟随 DSH（改文件、跑命令前会先问你）。选「完全访问」后，
-  小鲸鱼拉起的 DSH 可以读写整台电脑，而且不再弹审批 —— 确定需要再开。
-
-## 余额从哪来
-
-小鲸鱼自己不连任何厂商，也不碰你的 API key。余额来自 DSH 的 `GET /api/model-balance`，
-这个接口由 DSH 里的余额插件提供；没有这个插件的话，余额区就是空的，其他功能照常。
-
-想自己提供余额的话，接口返回这个形状就行（每个源一项，键就是设置里看到的 id）：
-
-```json
-{
-  "ok": true,
-  "providers": {
-    "deepseek": { "ok": true, "label": "DeepSeek", "kind": "prepaid", "currency": "CNY", "remaining": 86.4, "limit": null },
-    "codex":    { "ok": true, "label": "ChatGPT 5h 余量", "kind": "quota", "currency": "%", "remaining": 72, "limit": 100 }
-  }
-}
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\test-windows.ps1
+node --test .\tests\balances.test.mjs
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
 ```
 
-`kind` 是 `prepaid`（预付，没有上限）或 `quota`（额度，有上限）。有上限的按剩余比例变色，没上限的按金额变色。
+安装包生成在 `dist/DSHWhale-Vibe-Windows.zip`。生命周期测试 `scripts/test-lifecycle.ps1` 会启动和关闭本项目的托盘程序，运行前应先退出已有小鲸鱼。`tests/live-gpt.mjs` 是手动启用的真实模型集成测试，会消耗少量额度，不属于默认测试。
 
-## 常见问题
+完整说明、数据路径及平台限制见 [Windows 使用说明](README-Windows.md)。Windows 系统窗口和通知采用原生交互，不保证与 macOS 像素级一致。
 
-**余额一直显示「—」**：DSH 没在运行，或者 DSH 里没有提供余额接口的插件。
+## 许可与来源
 
-**怎么重启 DSH**：面板里点「重启服务」。或者直接结束那个进程，小鲸鱼 20 秒内会把它拉起来：
-
-```bash
-kill $(lsof -nP -iTCP:3080 -sTCP:LISTEN -t)
-```
-
-**DSH 启动失败**：小鲸鱼会发通知，附上 DSH 自己报的错误。完整输出在 `~/.dsh/logs/dsh-web.err.log`。
-刚启动就退出的情况（配置写错、插件加载不了）连续 3 次之后它就不再自动重试，修好之后在面板里点「开启服务」。
-
-**卸载**：
-
-```bash
-scripts/install-launchagent.sh --uninstall
-rm -rf /Applications/DSHWhale.app
-defaults delete io.github.alphainfix.dsh-whale   # 清掉设置
-```
-
-## 它是怎么工作的
-
-- **找 node**：先用 nvm 里最新的版本，再找 Homebrew 和系统路径。DSH 带有原生模块，和 node 大版本绑定，
-  所以要用装 DSH 时的那个 node。
-- **找 dsh**：全局安装优先，否则用 npx 缓存里最近更新的那一份。
-- **启动**：`node <dsh> web --no-open`，工作目录是你的主目录，输出追加到 `~/.dsh/logs/`。
-- **看门**：每 20 秒看一次端口。空了、而且不是你手动停的，就重新拉起。
-
-## 开发
-
-```bash
-swift build                                        # 调试构建
-scripts/build-app.sh                               # 打包到 build/DSHWhale.app
-build/DSHWhale.app/Contents/MacOS/DSHWhale --snapshot /tmp/shots --demo   # 用示例数据渲染面板和设置页
-```
-
-## License
-
-MIT
+[MIT License](LICENSE)。原版版权归 Alphainfix，Windows 移植保留原始署名与许可。
