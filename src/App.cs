@@ -32,17 +32,21 @@ namespace DshWhale {
                 if (!created) { MessageBox.Show("小鲸鱼已在系统托盘运行。请点击任务栏右下角的鲸鱼图标。", "DSH 小鲸鱼"); return 0; }
                 using (var stop = new EventWaitHandle(false, EventResetMode.AutoReset, stopName + (demo ? ".Demo" : "")))
                 using (var settingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Lifecycle.SettingsEvent + (demo ? ".Demo" : "")))
+                using (var openSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Lifecycle.OpenEvent + (demo ? ".Demo" : "")))
+                using (var panelSignal = new EventWaitHandle(false, EventResetMode.AutoReset, Lifecycle.PanelEvent + (demo ? ".Demo" : "")))
                 using (var form = new WhaleForm(demo)) {
                     IntPtr handle = form.Handle;
                     using (var context = new ApplicationContext()) {
                         using (var stopTimer = new System.Windows.Forms.Timer { Interval = 500 }) {
                         stopTimer.Tick += delegate {
                             if (settingsSignal.WaitOne(0)) form.ShowSettings();
+                            if (panelSignal.WaitOne(0)) form.ShowPanel();
+                            if (openSignal.WaitOne(0)) form.BeginInvoke(new Action(async delegate { await form.OpenDsh(); }));
                             if (stop.WaitOne(0)) { Diagnostics.Log("Clean shutdown requested; DSH left running."); Application.Exit(); }
                         };
                         stopTimer.Start();
                         form.FormClosed += delegate { context.ExitThread(); };
-                        form.BeginInvoke(new Action(async delegate { await form.Initialize(args.Contains("--settings"), args.Contains("--no-start")); }));
+                        form.BeginInvoke(new Action(async delegate { await form.Initialize(args.Contains("--settings"), args.Contains("--no-start"),args.Contains("--panel")); if(args.Contains("--open"))await form.OpenDsh(); }));
                         Diagnostics.Log("Tray worker running: " + Application.ExecutablePath);
                         Application.Run(context);
                         }
@@ -89,7 +93,7 @@ namespace DshWhale {
             bottomLine=new Panel { Height=1,Left=Style.P(14),Width=Style.P(260),BackColor=Color.FromArgb(225,225,225) };Controls.Add(bottomLine);
             toggle=ButtonAt("开启服务",14,205,126,async delegate{await Act(async()=>{if(service.Running)await service.Stop();else await service.Start(true);});});
             restart=ButtonAt("重启服务",148,205,126,async delegate{await Act(()=>service.Restart());});
-            open=ButtonAt("打开 DSH 界面",14,233,260,delegate{OpenWeb();});
+            open=ButtonAt("启动并打开 DSH",14,233,260,async delegate{await OpenDsh();});
             configure=ButtonAt("设置…",174,264,37,delegate{ShowSettings();});((SoftButton)configure).Link=true;configure.Font=Style.Font(10,false);
             quit=ButtonAt("退出小鲸鱼",215,264,59,async delegate{await Quit();});((SoftButton)quit).Link=true;quit.Font=Style.Font(10,false);
             updated=Style.Label("",14,264,150,16,10,false,Color.FromArgb(160,160,160));Controls.Add(updated);
@@ -104,6 +108,8 @@ namespace DshWhale {
             return Balances.Parse("{\"ok\":true,\"providers\":{\"deepseek\":{\"ok\":true,\"label\":\"DeepSeek\",\"kind\":\"prepaid\",\"currency\":\"CNY\",\"remaining\":86.4},\"openrouter\":{\"ok\":true,\"label\":\"OpenRouter\",\"kind\":\"prepaid\",\"currency\":\"USD\",\"remaining\":12.5},\"codex\":{\"ok\":true,\"label\":\"ChatGPT 5h 余量\",\"kind\":\"quota\",\"currency\":\"%\",\"remaining\":72,\"limit\":100}}}");
         }
         Icon MakeIcon() {
+            string appIcon = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"whale-windows.ico");
+            if(File.Exists(appIcon))return new Icon(appIcon,32,32);
             string resource = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "whale.png");
             if (!File.Exists(resource)) return (Icon)SystemIcons.Application.Clone();
             using (var original = new Bitmap(resource)) using (var bitmap = new Bitmap(32, 32)) {
@@ -118,7 +124,7 @@ namespace DshWhale {
         }
         protected override CreateParams CreateParams { get { var p=base.CreateParams;p.ClassStyle|=0x20000;return p;} }
         protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); if(Width>24&&Height>24)using(var path=Style.Round(new RectangleF(0,0,Width,Height),Style.P(12))){var previous=Region;Region=new Region(path);if(previous!=null)previous.Dispose();} }
-        public async Task Initialize(bool showSettings, bool noStart) {
+        public async Task Initialize(bool showSettings, bool noStart, bool showPanel = false) {
             if (noStart) service.Stopped = true;
             tray = new NotifyIcon { Icon = whaleIcon, Text = "DSH 小鲸鱼 · Vibe", Visible = true };
             tray.MouseClick += async delegate(object sender, MouseEventArgs e) {
@@ -127,19 +133,19 @@ namespace DshWhale {
                 ShowPanel(); if (!demo) await Act(() => service.Tick(false));
             };
             var menu = new ContextMenuStrip();
-            menu.Items.Add("打开 DSH 界面", null, delegate { OpenWeb(); });
+            menu.Items.Add("启动并打开 DSH", null, async delegate { await OpenDsh(); });
             menu.Items.Add("显示面板", null, delegate { ShowPanel(); });
             menu.Items.Add("设置…", null, delegate { ShowSettings(); });
             menu.Items.Add("登录 ChatGPT…", null, delegate { OpenChatGPT(); });
             menu.Items.Add("退出…", null, async delegate { await Quit(); }); tray.ContextMenuStrip = menu;
-            if (!demo) Hide(); else ShowPanel();
+            if (demo || showPanel) ShowPanel(); else Hide();
             timer = new System.Windows.Forms.Timer { Interval = 20000 };
             timer.Tick += async delegate { if (!demo) await Act(() => service.Tick(true)); };
             timer.Start();
             if (showSettings) ShowSettings();
             if (!demo) await Act(() => service.Tick(true));
         }
-        void ShowPanel() {
+        internal void ShowPanel() {
             Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
             Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
             Render(); Show(); Activate();
@@ -158,7 +164,7 @@ namespace DshWhale {
             bottomLine.Top=rows.Bottom+Style.P(11);toggle.Top=restart.Top=bottomLine.Bottom+Style.P(10);open.Top=toggle.Bottom+Style.P(7);
             updated.Top=configure.Top=quit.Top=open.Bottom+Style.P(9);configure.Height=quit.Height=Style.P(16);ClientSize=new Size(Style.P(288),quit.Bottom+Style.P(11));
             toggle.Text=service.Running?"关闭服务":busy?"正在启动…":"开启服务";restart.Enabled=!busy&&service.Running;
-            toggle.Enabled=!busy;open.Enabled=configure.Enabled=true;((SoftButton)toggle).Primary=!service.Running&&!busy;toggle.Invalidate();AcceptButton=service.Running?null:toggle;
+            toggle.Enabled=open.Enabled=!busy;configure.Enabled=true;open.Text=busy?"正在连接 DSH…":service.Running?"打开 DSH 界面":"启动并打开 DSH";((SoftButton)toggle).Primary=!service.Running&&!busy;toggle.Invalidate();AcceptButton=service.Running?null:toggle;
             int seconds=updatedAt==default(DateTime)?0:(int)(DateTime.Now-updatedAt).TotalSeconds;updated.Text=demo||seconds<5?"刚刚更新":seconds+" 秒前更新";
             if(tray!=null)tray.Text="DSH 小鲸鱼 · Vibe · "+(service.Running?"运行中":"未运行");
             if(settingsForm!=null&&!settingsForm.IsDisposed)settingsForm.UpdateReadings(service.Readings,service.BalancesReachable,service.BalanceProblem);
@@ -193,6 +199,11 @@ namespace DshWhale {
                 settings = s; service.Settings = s; Render();
             };
             settingsForm.Show();
+        }
+        internal async Task OpenDsh() {
+            if(demo)return;
+            while(busy&&!IsDisposed)await Task.Delay(100);
+            if(!IsDisposed)await Act(()=>service.Start(true));
         }
         void OpenChatGPT() {
             if(demo)return;

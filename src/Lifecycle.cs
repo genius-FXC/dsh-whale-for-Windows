@@ -23,18 +23,27 @@ namespace DshWhale {
     }
     public static class Lifecycle {
         public static readonly string SettingsEvent = "Local\\DSHWhale.Vibe.Settings." + Environment.UserName;
+        public static readonly string OpenEvent = "Local\\DSHWhale.Vibe.Open." + Environment.UserName;
+        public static readonly string PanelEvent = "Local\\DSHWhale.Vibe.Panel." + Environment.UserName;
         // A clean UI exit is final. Only unexpected process exits are retried, with a hard cap.
         public static int Supervise(string[] args) {
             bool created;
             using (var mutex = new Mutex(true, "Local\\DSHWhale.Supervisor." + Environment.UserName, out created)) {
                 if (!created) {
+                    if(args.Contains("--open") || args.Contains("--panel")) {
+                        for(int attempt=0;attempt<40;attempt++) {
+                            try {using(var signal=EventWaitHandle.OpenExisting(args.Contains("--open")?OpenEvent:PanelEvent))signal.Set();break;}
+                            catch(WaitHandleCannotBeOpenedException){Thread.Sleep(250);}
+                        }
+                    }
                     if (args.Contains("--settings")) try { using (var signal = EventWaitHandle.OpenExisting(SettingsEvent)) signal.Set(); } catch (WaitHandleCannotBeOpenedException) { }
                     return 0;
                 }
                 int failures = 0;
                 while (true) {
                     DateTime started = DateTime.UtcNow;
-                    string options = "--worker" + (args.Contains("--settings") ? " --settings" : "") + (args.Contains("--no-start") ? " --no-start" : "");
+                    string options = "--worker" + (args.Contains("--settings") ? " --settings" : "") + (args.Contains("--no-start") ? " --no-start" : "") + (args.Contains("--open") && failures==0 ? " --open" : "");
+                    if(args.Contains("--panel") && failures==0) options+=" --panel";
                     Diagnostics.Log("Starting tray worker, attempt " + (failures + 1));
                     int code;
                     using (var child = Process.Start(new ProcessStartInfo(Application.ExecutablePath, options) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory })) { child.WaitForExit(); code = child.ExitCode; }
