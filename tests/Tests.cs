@@ -69,7 +69,8 @@ class Tests {
         for (int i = 0; i < 20 && Native.Listeners(port).Count == 0; i++) await Task.Delay(100);
         Check(Native.Listeners(port).Count == 1, "child keeps running after actual launcher process exits");
         var adopted = new Service(settings, externalHome, port); try { await adopted.Stop(); } finally { adopted.Dispose(); }
-        var found = Discovery.Find(new Settings()); Check(File.Exists(found.Entry), "installed DSH discovered from npm cache");
+        try { var found = Discovery.Find(new Settings()); Check(File.Exists(found.Entry), "installed DSH discovered from npm cache"); }
+        catch (FileNotFoundException) { if(Environment.GetEnvironmentVariable("WHALE_TEST_REQUIRE_DSH")=="1")throw; Console.WriteLine("SKIP: optional installed DSH discovery (no installation on this host)"); }
         var live = new Service(new Settings(), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 3080);
         try { await live.Tick(false); Console.WriteLine("READ-ONLY local DSH: running=" + live.Running + ", balanceProviders=" + live.Readings.Count); } finally { live.Dispose(); }
     }
